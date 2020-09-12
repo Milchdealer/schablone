@@ -77,7 +77,7 @@ fn template_pathname(path: &Path, tera: &mut Tera, context: &Context) -> Result<
     Ok(result)
 }
 
-fn process_directory(dir: &Path, target_base: &Path, cb: &ProcessingFunction, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
+fn process_directory(dir: &Path, source_base: &Path, target_base: &Path, cb: &ProcessingFunction, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
     let templated_path = match template_pathname(dir, tera, context) {
         Ok(result) => result,
         Err(e) => {
@@ -97,11 +97,11 @@ fn process_directory(dir: &Path, target_base: &Path, cb: &ProcessingFunction, te
             let entry = entry.unwrap();
             let path = entry.path();
             if path.is_dir() {
-                if let Err(e) = process_directory(&path, target_base, cb, tera, context) {
+                if let Err(e) = process_directory(&path, source_base, target_base, cb, tera, context) {
                     println!("Failed to process entry '{}': {}", path.to_str().unwrap(), e);
                 }
             } else {
-                if let Err(e) = cb(&entry, &target_base, tera, context) {
+                if let Err(e) = cb(&entry, &source_base, &target_base, tera, context) {
                     println!("Failed to process file: {}", e);
                 }
             }
@@ -110,17 +110,19 @@ fn process_directory(dir: &Path, target_base: &Path, cb: &ProcessingFunction, te
     Ok(())
 }
 
-type ProcessingFunction = dyn Fn(&DirEntry, &Path, &mut Tera, &Context) -> Result<(), SchabloneError>;
-fn process_file(entry: &DirEntry, target_base: &Path, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
+type ProcessingFunction = dyn Fn(&DirEntry, &Path, &Path, &mut Tera, &Context) -> Result<(), SchabloneError>;
+fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
     let path = entry.path();
-    let path_name = path.to_str().unwrap();
+    // Tera strips the root in the template's key, so we need to strip it too
+    let path_name = path.strip_prefix(source_base).unwrap();
+    let path_name = path_name.to_str().unwrap();
     println!("Path: {}", path_name);
     let templated_pathname = match template_pathname(&path, tera, context) {
         Ok(result) => result,
         Err(e) => {
             let name = entry.file_name().to_str().unwrap().to_owned();
             println!("Failed to process {}: {}", name, e);
-            return Err(SchabloneError::ProcessingError{name: name});
+            return Err(SchabloneError::ProcessingError{name});
         }
     };
     let templated_path = Path::new(&templated_pathname);
@@ -166,11 +168,10 @@ pub fn build_schablone(name: &str, target: &str, parameters: &str) {
             ::std::process::exit(1);
         },
     };
-    println!("{:?}", tera);
 
     let source_path = Path::new(name);
     let target_path = Path::new(target);
-    if let Err(e) = process_directory(source_path, target_path, &process_file, &mut tera, &context) {
+    if let Err(e) = process_directory(source_path, source_path, target_path, &process_file, &mut tera, &context) {
         println!("Failed to run schablone: {}", e);
     }
 }
