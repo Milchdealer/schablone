@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 description = "A command-line utility that creates projects from a Schablone (template)."
 homepage = "https://github.com/Milchdealer/schablone"
 repository = "https://github.com/Milchdealer/schablone"
+documentation = "https://docs.rs/schablone"
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
