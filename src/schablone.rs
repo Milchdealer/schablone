@@ -6,6 +6,7 @@ use tera::{Context, Tera};
 
 use snafu::Snafu;
 
+/// Errors thrown by this module.
 #[derive(Debug, Snafu)]
 pub enum SchabloneError {
     #[snafu(display("Failed to template"))]
@@ -18,17 +19,25 @@ pub enum SchabloneError {
     FileError,
 }
 
-
+/// Creates a new empty schablone
+///
+/// Right now it only creates a folder with the name, but in the future a basic template
+/// should be copied over.
 pub fn new_schablone(name: &str) {
     if let Err(e) = fs::create_dir(name) {
         println!("Failed to create directory {}: {}!", name, e);
         ::std::process::exit(1);
     }
 
-    // Todo: Put default README/files into folder
+    // Todo: Put default README/template into folder
 }
 
-// Parses a string containing KEY=VALUE pairs, separated by comma.
+/// Parse parameters given as a `KEY1=VALUE1,KEY2=VALUE2,...` `&str`
+///
+/// Parses a string containing KEY=VALUE pairs, separated by comma.
+/// It returns a [`Context`].
+///
+/// [`Context`]: tera::Context
 fn parse_parameters(parameters: &str) -> Context {
     println!("Parsing tera context from parameters: '{}'", parameters);
     let mut context = Context::new();
@@ -56,6 +65,14 @@ fn parse_parameters(parameters: &str) -> Context {
     context
 }
 
+/// Templates a path using [`Tera`] and the [`Context`].
+///
+/// Given a [`Tera`] instance and a [`Context`], template the `path` passed.
+/// This does a one-off render with tera using the [`render_str`] method.
+/// 
+/// [`Tera`]: tera::Tera
+/// [`Context`]: tera::Context
+/// [`render_str`]: tera::Tera::render_str
 fn template_pathname(path: &Path, tera: &mut Tera, context: &Context) -> Result<String, SchabloneError> {
     // Add the directory/file name for templating
     let name = match path.to_str() {
@@ -77,13 +94,20 @@ fn template_pathname(path: &Path, tera: &mut Tera, context: &Context) -> Result<
     Ok(result)
 }
 
+/// Recursively process a directory.
+///
+/// Processing a directory means it creates the directory in the target destination, templating the
+/// name using [`template_pathname`] and calling the passed [`ProcessingFunction`] on every file.
+///
+/// [`template_pathname`]: self::template_pathname
+/// [`ProcessingFunction`]: self::ProcessingFunction
 fn process_directory(dir: &Path, source_base: &Path, target_base: &Path, cb: &ProcessingFunction, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
     let templated_path = match template_pathname(dir, tera, context) {
         Ok(result) => result,
         Err(e) => {
             let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
             println!("Failed to process {}: {}", name, e);
-            return Err(SchabloneError::ProcessingError{name: name});
+            return Err(SchabloneError::ProcessingError{name});
         }
     };
     let templated_path = Path::new(&templated_path);
@@ -110,7 +134,20 @@ fn process_directory(dir: &Path, source_base: &Path, target_base: &Path, cb: &Pr
     Ok(())
 }
 
+/// Processing function called for every file processed.
+///
+/// Brevity typedef which should always match the definition of [`process_file`], or any other callback
+/// that should be called upon a file.
+///
+/// [`process_file`]: self::process_file
 type ProcessingFunction = dyn Fn(&DirEntry, &Path, &Path, &mut Tera, &Context) -> Result<(), SchabloneError>;
+/// Process one file.
+///
+/// Standard callback which processes one file from the schablone.
+/// Templates the file's name (with [`template_pathname`]) and content (with [`render`]) and copies it over to the destination.
+///
+/// [`template_pathname`]: self::template_pathname
+/// [`render`]: tera::Tera::render
 fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
     let path = entry.path();
     // Tera strips the root in the template's key, so we need to strip it too
@@ -150,6 +187,9 @@ fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: 
     Ok(())
 }
 
+/// Build the schablone.
+///
+/// Take an input folder and build the schablone to a target. Use the parameters for templating.
 pub fn build_schablone(name: &str, target: &str, parameters: &str) {
     println!("Creating target directory '{}'", target);
     if let Err(e) = fs::create_dir(target) {
