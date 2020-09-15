@@ -35,7 +35,11 @@ fn main() {
                                 .takes_value(true))
                             .arg(Arg::with_name("parameters")
                                 .short("p")
-                                .help("Parameters to render, either KEY=VALUE pairs separated by a comma or a path to a JSON")
+                                .help("Parameters to render, either KEY=VALUE pairs separated by a comma")
+                                .takes_value(true))
+                            .arg(Arg::with_name("parameters_file")
+                                .short("f")
+                                .help("Parameters to render, given the path to a JSON file")
                                 .takes_value(true))).get_matches();
 
     if let Some(matches) = matches.subcommand_matches("new") {
@@ -45,7 +49,8 @@ fn main() {
         let name = matches.value_of("name").unwrap_or("schablone");
         let target = matches.value_of("target").unwrap_or("schablone_target");
         let parameters = matches.value_of("parameters").unwrap_or("");
+        let parameters_file = matches.value_of("parameters_file").unwrap_or("");
 
-        build_schablone(name, target, parameters);
+        build_schablone(name, target, parameters, parameters_file);
     }
 }

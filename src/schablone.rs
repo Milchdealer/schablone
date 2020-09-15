@@ -2,7 +2,9 @@ use std::fs::{self, DirEntry, File};
 use std::io::prelude::*;
 use std::path::Path;
 
-use tera::{Context, Tera};
+use serde_json;
+
+use tera::{Context, Tera, Value};
 
 use snafu::Snafu;
 
@@ -32,6 +34,26 @@ pub fn new_schablone(name: &str) {
     // Todo: Put default README/template into folder
 }
 
+/// Parse a JSON file containing parameters.
+///
+/// Parses a JSON file containing parameters and returns a [`Context`].
+///
+/// [`Context`]: tera::Context
+fn parse_parameters_file(parameters_file: &str) -> Context {
+    info!("Parsing tera context from file: '{}'", parameters_file);
+    let content = fs::read_to_string(parameters_file).unwrap_or("{}".to_owned());
+    let content: Value = match serde_json::from_str(&content) {
+        Ok(content) => content,
+        Err(e) => {
+            error!("Failed to parse JSON from string: {}", e);
+            return Context::new();
+        }
+    };
+
+    debug!("Parsed JSON: {:?}", content);
+    Context::from_value(content).unwrap_or_default()
+}
+
 /// Parse parameters given as a `KEY1=VALUE1,KEY2=VALUE2,...` `&str`
 ///
 /// Parses a string containing KEY=VALUE pairs, separated by comma.
@@ -59,6 +81,7 @@ fn parse_parameters(parameters: &str) -> Context {
             }
         };
 
+        debug!("Inserting key=value pair: {}={}", key, value);
         context.insert(key.to_owned(), &value.to_owned());
     }
 
@@ -190,14 +213,15 @@ fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: 
 /// Build the schablone.
 ///
 /// Take an input folder and build the schablone to a target. Use the parameters for templating.
-pub fn build_schablone(name: &str, target: &str, parameters: &str) {
+pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_file: &str) {
     println!("Creating target directory '{}'", target);
     if let Err(e) = fs::create_dir(target) {
         error!("Failed to create directory '{}': {}!", target, e);
         ::std::process::exit(1);
     }
 
-    let context = parse_parameters(parameters);
+    let mut context = parse_parameters_file(parameters_file);
+    context.extend(parse_parameters(parameters));
     let mut path: String = name.to_owned();
     path.push_str(&"/**/*".to_owned());
     info!("Parsing schablone from {}", path);
