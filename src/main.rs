@@ -1,13 +1,17 @@
 extern crate clap;
+#[macro_use] extern crate log;
+extern crate env_logger;
+
 use clap::{Arg, App, SubCommand};
 
 mod schablone;
 use schablone::{new_schablone, build_schablone};
 
 fn main() {
-    println!("Schablone");
+    env_logger::init();
+    info!("Schablone");
     let matches = App::new("schablone")
-                        .version("0.0.1")
+                        .version("0.1.2")
                         .author("Milchdealer")
                         .about("schablone.")
                         .subcommand(SubCommand::with_name("new")
