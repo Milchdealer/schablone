@@ -21,19 +21,6 @@ pub enum SchabloneError {
     FileError,
 }
 
-/// Creates a new empty schablone
-///
-/// Right now it only creates a folder with the name, but in the future a basic template
-/// should be copied over.
-pub fn new_schablone(name: &str) {
-    if let Err(e) = fs::create_dir(name) {
-        error!("Failed to create directory {}: {}!", name, e);
-        ::std::process::exit(1);
-    }
-
-    // Todo: Put default README/template into folder
-}
-
 /// Parse a JSON file containing parameters.
 ///
 /// Parses a JSON file containing parameters and returns a [`Context`].
@@ -222,6 +209,7 @@ pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_fi
 
     let mut context = parse_parameters_file(parameters_file);
     context.extend(parse_parameters(parameters));
+    debug!("context: {:?}", context);
     let mut path: String = name.to_owned();
     path.push_str(&"/**/*".to_owned());
     info!("Parsing schablone from {}", path);
@@ -232,6 +220,7 @@ pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_fi
             ::std::process::exit(1);
         },
     };
+    debug!("tera: {:?}", tera);
 
     let source_path = Path::new(name);
     let target_path = Path::new(target);
