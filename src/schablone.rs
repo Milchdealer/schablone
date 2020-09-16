@@ -14,9 +14,7 @@ pub enum SchabloneError {
     #[snafu(display("Failed to template"))]
     TemplateError,
     #[snafu(display("Failed to process file or directory: {}", name))]
-    ProcessingError {
-        name: String,
-    },
+    ProcessingError { name: String },
     #[snafu(display("Failed to create file or directory"))]
     FileError,
 }
@@ -79,11 +77,15 @@ fn parse_parameters(parameters: &str) -> Context {
 ///
 /// Given a [`Tera`] instance and a [`Context`], template the `path` passed.
 /// This does a one-off render with tera using the [`render_str`] method.
-/// 
+///
 /// [`Tera`]: tera::Tera
 /// [`Context`]: tera::Context
 /// [`render_str`]: tera::Tera::render_str
-fn template_pathname(path: &Path, tera: &mut Tera, context: &Context) -> Result<String, SchabloneError> {
+fn template_pathname(
+    path: &Path,
+    tera: &mut Tera,
+    context: &Context,
+) -> Result<String, SchabloneError> {
     // Add the directory/file name for templating
     let name = match path.to_str() {
         Some(s) => s,
@@ -111,31 +113,53 @@ fn template_pathname(path: &Path, tera: &mut Tera, context: &Context) -> Result<
 ///
 /// [`template_pathname`]: self::template_pathname
 /// [`ProcessingFunction`]: self::ProcessingFunction
-fn process_directory(dir: &Path, source_base: &Path, target_base: &Path, cb: &ProcessingFunction, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
+fn process_directory(
+    dir: &Path,
+    source_base: &Path,
+    target_base: &Path,
+    cb: &ProcessingFunction,
+    tera: &mut Tera,
+    context: &Context,
+    dry_run: bool,
+) -> Result<(), SchabloneError> {
     let templated_path = match template_pathname(dir, tera, context) {
         Ok(result) => result,
         Err(e) => {
             let name = dir.file_name().unwrap().to_str().unwrap().to_owned();
             error!("Failed to process {}: {}", name, e);
-            return Err(SchabloneError::ProcessingError{name});
+            return Err(SchabloneError::ProcessingError { name });
         }
     };
     let templated_path = Path::new(&templated_path);
     if dir.is_dir() {
         let target_dir = target_base.join(templated_path);
-        if let Err(e) = fs::create_dir(target_dir) {
-            error!("Failed to create directory '{}': {}!", templated_path.to_str().unwrap(), e);
-            return Err(SchabloneError::ProcessingError{name: templated_path.to_str().unwrap().to_owned()});
+        if !dry_run {
+            if let Err(e) = fs::create_dir(target_dir) {
+                error!(
+                    "Failed to create directory '{}': {}!",
+                    templated_path.to_str().unwrap(),
+                    e
+                );
+                return Err(SchabloneError::ProcessingError {
+                    name: templated_path.to_str().unwrap().to_owned(),
+                });
+            }
         }
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             if path.is_dir() {
-                if let Err(e) = process_directory(&path, source_base, target_base, cb, tera, context) {
-                    error!("Failed to process entry '{}': {}", path.to_str().unwrap(), e);
+                if let Err(e) =
+                    process_directory(&path, source_base, target_base, cb, tera, context, dry_run)
+                {
+                    error!(
+                        "Failed to process entry '{}': {}",
+                        path.to_str().unwrap(),
+                        e
+                    );
                 }
             } else {
-                if let Err(e) = cb(&entry, &source_base, &target_base, tera, context) {
+                if let Err(e) = cb(&entry, &source_base, &target_base, tera, context, dry_run) {
                     error!("Failed to process file: {}", e);
                 }
             }
@@ -150,7 +174,8 @@ fn process_directory(dir: &Path, source_base: &Path, target_base: &Path, cb: &Pr
 /// that should be called upon a file.
 ///
 /// [`process_file`]: self::process_file
-type ProcessingFunction = dyn Fn(&DirEntry, &Path, &Path, &mut Tera, &Context) -> Result<(), SchabloneError>;
+type ProcessingFunction =
+    dyn Fn(&DirEntry, &Path, &Path, &mut Tera, &Context, bool) -> Result<(), SchabloneError>;
 /// Process one file.
 ///
 /// Standard callback which processes one file from the schablone.
@@ -158,7 +183,14 @@ type ProcessingFunction = dyn Fn(&DirEntry, &Path, &Path, &mut Tera, &Context) -
 ///
 /// [`template_pathname`]: self::template_pathname
 /// [`render`]: tera::Tera::render
-fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: &mut Tera, context: &Context) -> Result<(), SchabloneError> {
+fn process_file(
+    entry: &DirEntry,
+    source_base: &Path,
+    target_base: &Path,
+    tera: &mut Tera,
+    context: &Context,
+    dry_run: bool,
+) -> Result<(), SchabloneError> {
     let path = entry.path();
     // Tera strips the root in the template's key, so we need to strip it too
     let path_name = path.strip_prefix(source_base).unwrap();
@@ -169,7 +201,7 @@ fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: 
         Err(e) => {
             let name = entry.file_name().to_str().unwrap().to_owned();
             error!("Failed to process {}: {}", name, e);
-            return Err(SchabloneError::ProcessingError{name});
+            return Err(SchabloneError::ProcessingError { name });
         }
     };
     let templated_path = Path::new(&templated_pathname);
@@ -181,18 +213,19 @@ fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: 
         }
     };
     let templated_path = target_base.join(templated_path);
-    let mut file = match File::create(templated_path) {
-        Ok(f) => f,
-        Err(e) => {
-            error!("Failed to create file '{}': {}", templated_pathname, e);
+    if !dry_run {
+        let mut file = match File::create(templated_path) {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to create file '{}': {}", templated_pathname, e);
+                return Err(SchabloneError::FileError);
+            }
+        };
+        if let Err(e) = file.write_all(&content.into_bytes()) {
+            error!("Failed to write into new file: {}", e);
             return Err(SchabloneError::FileError);
         }
-    };
-    if let Err(e) = file.write_all(&content.into_bytes()) {
-        error!("Failed to write into new file: {}", e);
-        return Err(SchabloneError::FileError);
     }
-
 
     Ok(())
 }
@@ -200,7 +233,7 @@ fn process_file(entry: &DirEntry, source_base: &Path, target_base: &Path, tera: 
 /// Build the schablone.
 ///
 /// Take an input folder and build the schablone to a target. Use the parameters for templating.
-pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_file: &str) {
+pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_file: &str, dry_run: bool) {
     println!("Creating target directory '{}'", target);
     if let Err(e) = fs::create_dir(target) {
         error!("Failed to create directory '{}': {}!", target, e);
@@ -218,13 +251,21 @@ pub fn build_schablone(name: &str, target: &str, parameters: &str, parameters_fi
         Err(e) => {
             error!("Parsing error(s): {}", e);
             ::std::process::exit(1);
-        },
+        }
     };
     debug!("tera: {:?}", tera);
 
     let source_path = Path::new(name);
     let target_path = Path::new(target);
-    if let Err(e) = process_directory(source_path, source_path, target_path, &process_file, &mut tera, &context) {
+    if let Err(e) = process_directory(
+        source_path,
+        source_path,
+        target_path,
+        &process_file,
+        &mut tera,
+        &context,
+        dry_run
+    ) {
         error!("Failed to run schablone: {}", e);
     }
 }
