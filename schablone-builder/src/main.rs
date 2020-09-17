@@ -12,7 +12,7 @@ fn main() {
     env_logger::init();
     let matches = App::new("schablone")
                         .version("0.2.1")
-                        .author("Milchdealer")
+                        .author("Milchdealer/Teraku")
                         .about("Build a schablone from template")
                         .arg(Arg::with_name("name")
                             .help("Name of the schablone")
